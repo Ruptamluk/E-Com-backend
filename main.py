@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime, timedelta
+import bcrypt
 import jwt
 
 from models import User
@@ -35,6 +36,14 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+# Function to hash password
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+# Function to verify password
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
 # Signup route
 @app.post("/signup")
 def signup(user: UserCreate, db: Session = Depends(get_db)):
@@ -43,23 +52,43 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         (User.username == user.username) | (User.email == user.email)
     ).first()
     if existing_user:
+        print(f"Signup failed: Username or email already taken for {user.username}")
         raise HTTPException(status_code=400, detail="Username or email already taken")
 
-    # Create a new User instance
-    new_user = User(username=user.username, email=user.email, password=user.password)
+    # Hash the user's password before storing it
+    hashed_password = hash_password(user.password)
+    new_user = User(username=user.username, email=user.email, password=hashed_password)
 
     # Add and commit the new user to the database
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
 
-    return {"message": "User created successfully", "user": {"id": new_user.id, "username": new_user.username, "email": new_user.email}}
+    # Return the response
+    response_data = {
+        "message": "User created successfully",
+        "user": {
+            "id": new_user.id,
+            "username": new_user.username,
+            "email": new_user.email
+        }
+    }
+    print(f"Signup successful: {response_data}")
 
-# Login route with JWT implementation using JSON format
+    return response_data
+
+# Login route with JWT implementation using JSON format and password verification
 @app.post("/login")
 def login(user: UserLogin, db: Session = Depends(get_db)):
+    print(f"Received login request for username: {user.username}")
+
     db_user = db.query(User).filter(User.username == user.username).first()
-    if not db_user or user.password != db_user.password:
+    if not db_user:
+        print("Login failed: User not found")
+        raise HTTPException(status_code=400, detail="Invalid username or password")
+    
+    if not verify_password(user.password, db_user.password):
+        print("Login failed: Incorrect password")
         raise HTTPException(status_code=400, detail="Invalid username or password")
 
     # Generate JWT token
@@ -79,12 +108,9 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
             "role": "user"
         }
     }
-    #return response data
-    return(response_data)
-    # Print the response data in the console
-    # print(response_data)
+    print(f"Login successful: {response_data}")
 
-    # return response_data
+    return response_data
 
 # Run the application
 if __name__ == "__main__":
