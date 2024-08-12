@@ -6,7 +6,7 @@ import bcrypt
 import jwt
 
 from models import User
-from schemas import UserCreate , UserLogin , PasswordReset
+from schemas import UserCreate , UserLogin , PasswordReset , ForgotPassword
 from database import engine, Base, get_db
 
 # Initialize FastAPI app
@@ -146,6 +146,34 @@ def logout():
         "message": "Logged out successfully. Please delete the JWT token from your client."
     }
     print(f"Logout successful: {response_data}")
+
+    return response_data
+# Forgot Password route
+@app.post("/forgot-password")
+def forgot_password(forgot: ForgotPassword, db: Session = Depends(get_db)):
+    # Fetch the user by username and email
+    db_user = db.query(User).filter(User.username == forgot.username, User.email == forgot.email).first()
+    if not db_user:
+        print("Forgot Password failed: User not found")
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Hash the new password
+    new_hashed_password = hash_password(forgot.new_password)
+    
+    # Update the user's password in the database
+    db_user.password = new_hashed_password
+    db.commit()
+
+    # Return the response
+    response_data = {
+        "message": "Password updated successfully",
+        "user": {
+            "id": db_user.id,
+            "username": db_user.username,
+            "email": db_user.email
+        }
+    }
+    print(f"Forgot Password successful: {response_data}")
 
     return response_data
 # Run the application

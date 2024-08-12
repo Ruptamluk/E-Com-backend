@@ -17,3 +17,7 @@ class UserLogin(BaseModel):
 class PasswordReset(BaseModel):
     username: str
     new_password: str
+class ForgotPassword(BaseModel):
+    username: str
+    email: str
+    new_password: str
