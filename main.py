@@ -13,6 +13,12 @@ from models import User , OTP
 from schemas import UserCreate, UserLogin, PasswordReset, ForgotPassword , ChangePasswordRequest
 from database import engine, Base, get_db
 from sqlalchemy.orm import Session
+from typing import Dict
+
+# Temporary storage for verified emails
+verified_emails: Dict[str, str] = {}
+
+
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -175,42 +181,43 @@ def forgot_password(forgot: ForgotPassword, db: Session = Depends(get_db)):
 
 
 # OTP Verification route (Step 2: Verify the OTP)
+verified_email_cache = {}
+
 @app.post("/verify-otp/")
-def verify_otp(email: EmailStr = Body(...), otp: str = Body(...)):
-    db = SessionLocal()
-    try:
-        otp_record = db.query(OTP).filter(OTP.email == email, OTP.otp == otp).first()
-        if not otp_record:
-            raise HTTPException(status_code=400, detail="Invalid OTP")
-        
-        # Check if OTP has expired
-        if otp_record.expires_at < datetime.utcnow():
-            raise HTTPException(status_code=400, detail="OTP has expired")
-
-        # Remove OTP after successful verification (optional)
-        # db.delete(otp_record)
-        db.commit()
-        
-        return {"message": "OTP verified successfully. You can now reset your password."}
-    finally:
-        db.close()
-
-# Change password after OTP verification (Step 3: Change the password)
-@app.post("/change-password/")
-def change_password(request: ChangePasswordRequest = Body(...), db: Session = Depends(get_db)):
-    # Validate the OTP
-    otp_record = db.query(OTP).filter(OTP.email == request.email, OTP.otp == request.otp).first()
+def verify_otp(email: EmailStr = Body(...), otp: str = Body(...), db: Session = Depends(get_db)):
+    otp_record = db.query(OTP).filter(OTP.email == email, OTP.otp == otp).first()
     if not otp_record:
         raise HTTPException(status_code=400, detail="Invalid OTP")
     
     # Check if OTP has expired
     if otp_record.expires_at < datetime.utcnow():
-        db.delete(otp_record)  # Optionally remove expired OTP from the database
-        db.commit()
         raise HTTPException(status_code=400, detail="OTP has expired")
 
+    # Store the verified email in temporary in-memory storage
+    verified_email_cache[email] = True
+    
+    # Remove OTP after successful verification (optional)
+    db.delete(otp_record)
+    db.commit()
+    
+    return {"message": "OTP verified successfully. You can now reset your password."}
+
+
+# Change password after OTP verification (Step 3: Change the password)
+@app.post("/change-password/")
+def change_password(request: ChangePasswordRequest, db: Session = Depends(get_db)):
+    # Retrieve the email from the in-memory cache
+    email = None
+    for cached_email in verified_email_cache:
+        if verified_email_cache[cached_email]:
+            email = cached_email
+            break
+
+    if not email:
+        raise HTTPException(status_code=400, detail="No verified email found. Please verify OTP first.")
+
     # Find the user
-    db_user = db.query(User).filter(User.email == request.email).first()
+    db_user = db.query(User).filter(User.email == email).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -218,12 +225,11 @@ def change_password(request: ChangePasswordRequest = Body(...), db: Session = De
     db_user.password = hash_password(request.new_password)
     db.commit()
 
-    # Remove OTP after successful password reset
-    db.delete(otp_record)
-    db.commit()
+    # Remove email from cache after successful password reset
+    del verified_email_cache[email]
 
     return {"message": "Password changed successfully."}
-    
+
 
 # Token verification route (Newly added)
 @app.get("/verify-token/")
