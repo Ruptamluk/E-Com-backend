@@ -8,8 +8,8 @@ import uuid
 import time
 from pydantic import BaseModel, EmailStr
 from email_Verification import send_email, generate_otp
-from models import User, OTP, ICON  # Added ICON model
-from schemas import UserCreate, UserLogin, IconCreate,GetIcon , ForgotPassword, ChangePasswordRequest  # Added GetIcon schema
+from models import User, OTP, Icon  # Added ICON model
+from schemas import UserCreate, UserLogin, IconCreate,IconResponse , ForgotPassword, ChangePasswordRequest  # Added GetIcon schema
 from database import engine, Base, get_db
 from typing import Dict
 
@@ -115,7 +115,7 @@ def validate_token(token: str) -> str:
 def create_icon_table(db: Session):
     create_table_query = """
     CREATE TABLE IF NOT EXISTS icons (
-        id SERIAL PRIMARY KEY,
+        id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         icon_url VARCHAR(255) NOT NULL
     );
@@ -158,6 +158,27 @@ def insert_icons(db: Session = Depends(get_db)):
         return {"message": "Icons inserted successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error inserting data: {e}")
+
+
+# Function to retrieve an icon by id
+# def get_icon(db: Session, icon_id: int) -> GetIcon:
+#     icon = db.query(ICON).filter(ICON.id == icon_id).first()
+#     if not icon:
+#         raise HTTPException(status_code=404, detail="Icon not found")
+#     return GetIcon(id=icon.id, name=icon.name, icon_url=icon.icon_url)
+
+
+# # API route to retrieve an icon by id
+# @app.get("/icons/{icon_id}", response_model=GetIcon)
+# def read_icon(icon_id: int, db: Session = Depends(get_db)):
+#     return get_icon(db=db, icon_id=icon_id)
+
+@app.get("/get-icon/{icon_id}", response_model=IconResponse)
+def get_icon(icon_id: int, db: Session = Depends(get_db)):
+    icon = db.query(Icon).filter(Icon.id == icon_id).first()
+    if icon is None:
+        raise HTTPException(status_code=404, detail="Icon not found")
+    return icon
 
 # Signup route
 @app.post("/signup")
