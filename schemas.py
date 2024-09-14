@@ -44,3 +44,20 @@ class UserResponse(BaseModel):
         orm_mode = True
 class ChangePasswordRequest(BaseModel):
     new_password: str
+
+
+class IconCreate(BaseModel):
+    name: str
+    icon_url: str
+
+    class Config:
+        orm_mode = True
+
+
+class GetIcon(BaseModel):
+    id: int
+    name: str
+    icon_url: str
+
+    class Config:
+        orm_mode = True

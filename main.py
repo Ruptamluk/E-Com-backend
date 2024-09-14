@@ -1,23 +1,20 @@
-from fastapi import FastAPI, HTTPException, Depends, Form, Query ,Body
-
+from fastapi import FastAPI, HTTPException, Depends, Query, Body
+from sqlalchemy.orm import sessionmaker, Session 
+from sqlalchemy import text
 from datetime import datetime, timedelta
 import bcrypt
 import jwt
 import uuid
 import time
-from sqlalchemy.orm import sessionmaker
 from pydantic import BaseModel, EmailStr
-from email_Verification import send_email, generate_otp  # Import new function
-
-from models import User , OTP
-from schemas import UserCreate, UserLogin, PasswordReset, ForgotPassword , ChangePasswordRequest
+from email_Verification import send_email, generate_otp
+from models import User, OTP, ICON  # Added ICON model
+from schemas import UserCreate, UserLogin, IconCreate,GetIcon , ForgotPassword, ChangePasswordRequest  # Added GetIcon schema
 from database import engine, Base, get_db
-from sqlalchemy.orm import Session
 from typing import Dict
 
 # Temporary storage for verified emails
 verified_emails: Dict[str, str] = {}
-
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -35,6 +32,7 @@ otp_storage = {}
 tokens = {}
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 # Function to create JWT token
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
@@ -69,6 +67,97 @@ def validate_token(token: str) -> str:
         del tokens[token]
         raise HTTPException(status_code=400, detail="Token expired")
     return token_data["email"]
+
+# # Function to retrieve an icon by id
+# def get_icon(db: Session, icon_id: int) -> GetIcon:
+#     icon = db.query(ICON).filter(ICON.id == icon_id).first()
+#     if not icon:
+#         raise HTTPException(status_code=404, detail="Icon not found")
+#     return GetIcon(id=icon.id, name=icon.name, icon_url=icon.icon_url)
+
+# # API route to retrieve an icon by id
+# @app.get("/icons/{icon_id}", response_model=GetIcon)
+# def read_icon(icon_id: int, db: Session = Depends(get_db)):
+#     return get_icon(db=db, icon_id=icon_id)
+# @app.post("/icons/")
+# def create_icon(icon: IconCreate, db: Session = Depends(get_db)):
+#     # Create an icon instance
+#     db_icon = ICON(name=icon.name, icon_url=icon.icon_url)
+
+#     # Add the icon to the session
+#     db.add(db_icon)
+#     db.commit()
+#     db.refresh(db_icon)  # Refresh to get the ID of the newly inserted record
+
+#     return {
+#         "message": "Icon created successfully",
+#         "icon": {
+#             "id": db_icon.id,
+#             "name": db_icon.name,
+#             "icon_url": db_icon.icon_url
+#         }
+#     }
+
+
+# # Function to retrieve an icon by id
+# def get_icon(db: Session, icon_id: int) -> GetIcon:
+#     icon = db.query(ICON).filter(ICON.id == icon_id).first()
+#     if not icon:
+#         raise HTTPException(status_code=404, detail="Icon not found")
+#     return GetIcon(id=icon.id, name=icon.name, icon_url=icon.icon_url)
+
+
+# # API route to retrieve an icon by id
+# @app.get("/icons/{icon_id}", response_model=GetIcon)
+# def read_icon(icon_id: int, db: Session = Depends(get_db)):
+#     return get_icon(db=db, icon_id=icon_id)
+# Function to create the 'icons' table using raw SQL
+def create_icon_table(db: Session):
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS icons (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        icon_url VARCHAR(255) NOT NULL
+    );
+    """
+    db.execute(text(create_table_query))
+    db.commit()
+
+# Function to manually insert icons into the 'icons' table
+def insert_icon_manually(db):
+    insert_data_query = """
+    INSERT INTO icons (name, icon_url)
+    VALUES
+        ('Medicine', 'https://img.icons8.com/?size=100&id=108787&format=png&color=000000'),
+        ('Fruits', 'https://img.icons8.com/?size=100&id=jgkOOM1KTHRc&format=png&color=000000'),
+        ('Vegetable', 'https://img.icons8.com/?size=100&id=cpa3RyNsYJkU&format=png&color=000000'),
+        ('Cosmetics', 'https://img.icons8.com/?size=100&id=UJikDF3wj2jk&format=png&color=000000'),
+        ('Grocery', 'https://img.icons8.com/?size=100&id=enZOTH5kGrxd&format=png&color=000000');
+    """
+    
+    try:
+        db.execute(text(insert_data_query))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error inserting data: {str(e)}")
+# Route to create the 'icons' table
+@app.post("/create-icons-table/")
+def create_table(db: Session = Depends(get_db)):
+    try:
+        create_icon_table(db)
+        return {"message": "Icons table created successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating table: {e}")
+
+# Route to manually insert icons into the 'icons' table
+@app.post("/insert-icons-manually/")
+def insert_icons(db: Session = Depends(get_db)):
+    try:
+        insert_icon_manually(db)
+        return {"message": "Icons inserted successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error inserting data: {e}")
 
 # Signup route
 @app.post("/signup")
@@ -123,30 +212,6 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     }
 
 # Forgot Password route (Step 1: Request password reset)
-# @app.post("/forgot-password")
-# def forgot_password(forgot: ForgotPassword, db: Session = Depends(get_db)):
-#     # Check if the user exists
-#     db_user = db.query(User).filter(User.username == forgot.username, User.email == forgot.email).first()
-#     if not db_user:
-#         raise HTTPException(status_code=404, detail="User not found")
-
-#     # Generate OTP and its expiration time
-#     otp = generate_otp()
-#     expires_at = datetime.utcnow() + timedelta(minutes=15)  # OTP valid for 15 minutes
-
-#     # Store OTP in the database
-#     otp_entry = OTP(email=forgot.email, otp=otp, created_at=datetime.utcnow(), expires_at=expires_at)
-#     db.add(otp_entry)
-#     db.commit()
-
-#     # Create OTP email content
-#     subject = "Password Reset OTP"
-#     body = f"Your OTP for password reset is: {otp}"
-
-#     # Send the OTP via email
-#     send_email(forgot.email, subject, body)
-
-#     return {"message": "OTP sent to your email. Please check your inbox."}
 @app.post("/forgot-password")
 def forgot_password(forgot: ForgotPassword, db: Session = Depends(get_db)):
     # Check if the user exists
@@ -179,7 +244,6 @@ def forgot_password(forgot: ForgotPassword, db: Session = Depends(get_db)):
 
     return {"message": "OTP sent to your email. Please check your inbox."}
 
-
 # OTP Verification route (Step 2: Verify the OTP)
 verified_email_cache = {}
 
@@ -201,7 +265,6 @@ def verify_otp(email: EmailStr = Body(...), otp: str = Body(...), db: Session = 
     db.commit()
     
     return {"message": "OTP verified successfully. You can now reset your password."}
-
 
 # Change password after OTP verification (Step 3: Change the password)
 @app.post("/change-password/")
@@ -229,7 +292,6 @@ def change_password(request: ChangePasswordRequest, db: Session = Depends(get_db
     del verified_email_cache[email]
 
     return {"message": "Password changed successfully."}
-
 
 # Token verification route (Newly added)
 @app.get("/verify-token/")
