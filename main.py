@@ -11,7 +11,7 @@ from email_Verification import send_email, generate_otp
 from models import User, OTP, Icon  # Added ICON model
 from schemas import UserCreate, UserLogin, IconCreate,IconResponse , ForgotPassword, ChangePasswordRequest  # Added GetIcon schema
 from database import engine, Base, get_db
-from typing import Dict
+from typing import Dict , List
 
 # Temporary storage for verified emails
 verified_emails: Dict[str, str] = {}
@@ -179,6 +179,14 @@ def get_icon(icon_id: int, db: Session = Depends(get_db)):
     if icon is None:
         raise HTTPException(status_code=404, detail="Icon not found")
     return icon
+
+
+@app.get("/icons/", response_model=List[IconResponse])
+def get_all_icons(db: Session = Depends(get_db)):
+    icons = db.query(Icon).all()
+    if not icons:
+        raise HTTPException(status_code=404, detail="No icons found")
+    return icons
 
 # Signup route
 @app.post("/signup")
