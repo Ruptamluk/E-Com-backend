@@ -12,13 +12,20 @@ from models import User, OTP, Icon  # Added ICON model
 from schemas import UserCreate, UserLogin, IconCreate,IconResponse , ForgotPassword, ChangePasswordRequest  # Added GetIcon schema
 from database import engine, Base, get_db
 from typing import Dict , List
+from fastapi.middleware.cors import CORSMiddleware
 
 # Temporary storage for verified emails
 verified_emails: Dict[str, str] = {}
 
 # Initialize FastAPI app
 app = FastAPI()
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # List of allowed origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],  # Allow all headers (Authorization, Content-Type, etc.)
+)
 # Create the database tables
 Base.metadata.create_all(bind=engine)
 
@@ -227,7 +234,7 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     access_token = create_access_token(
         data={"sub": db_user.username, "role": "user"}, expires_delta=access_token_expires
     )
-
+    print('login successful')
     return {
         "status": True,
         "access_token": access_token,
